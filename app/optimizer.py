@@ -222,6 +222,16 @@ def optimize(p: Problem) -> tuple[list[dict], str]:
     return build_plan(p, flows), solver
 
 
+def warm_up() -> None:
+    """Import SciPy and run one tiny solve so HiGHS is loaded before the first request."""
+    try:
+        _solve_lp(Problem(demand=[10.0] * 24, solar=[0.0] * 24, tariff=[1.0] * 24, e_min=[0.0] * 24,
+                          e_max=10.0, initial=5.0, charge_max=[1.0] * 24, discharge_max=[1.0] * 24,
+                          grid_cap=[math.inf] * 24))
+    except Exception as exc:  # never block startup; the DP fallback still works
+        log.warning("solver warm-up failed: %s", type(exc).__name__)
+
+
 def totals(plan: list[dict], tariff: list[float]) -> tuple[float, float, float]:
     grid = [row["grid_kwh"] for row in plan]
     return (_r(sum(grid)),

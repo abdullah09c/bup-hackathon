@@ -1,6 +1,7 @@
 """GridWise LLM API: GET /health, POST /optimize-energy."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -8,10 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import load_settings
 from .llm import client
+from .optimizer import warm_up as warm_up_solver
 from .pipeline import ScenarioError, run
 from .schemas import OptimizeRequest, OptimizeResponse
 
@@ -29,11 +32,16 @@ async def lifespan(_: FastAPI):
     else:
         log.warning("No LLM configured (LLM_API_KEY unset): using stub rule-based interpreter. "
                     "Set LLM_PROVIDER/LLM_API_KEY before deployment.")
+    # Warm-up so the first judged request is not slow: load SciPy/HiGHS now (~1 s, before
+    # the port opens) and open the TLS connections to the LLM hosts in the background.
+    await run_in_threadpool(warm_up_solver)
+    llm_warmup = asyncio.create_task(client.warm_up(settings.endpoints))
     yield
+    llm_warmup.cancel()
     await client.close()
 
 
-app = FastAPI(title="GridWise LLM", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="GridWise LLM", version="1.0.1", lifespan=lifespan)
 
 
 @app.exception_handler(RequestValidationError)

@@ -36,6 +36,20 @@ async def close() -> None:
         _client = None
 
 
+async def warm_up(endpoints: list[LLMEndpoint]) -> None:
+    """Open pooled TLS connections to each distinct LLM host (GET /models: no tokens used)."""
+    seen = set()
+    for ep in endpoints:
+        if ep.base_url in seen:
+            continue
+        seen.add(ep.base_url)
+        try:
+            await _http().get(f"{ep.base_url}/models", headers={"Authorization": f"Bearer {ep.api_key}",
+                                                              **ep.extra_headers}, timeout=5)
+        except Exception:  # best effort only
+            pass
+
+
 async def chat_json(ep: LLMEndpoint, messages: list[dict], timeout_s: float) -> tuple[Any, str]:
     """Send messages, return (parsed JSON, raw text)."""
     body: dict[str, Any] = {"model": ep.model, "messages": messages, "temperature": 0, "max_tokens": 1500}

@@ -36,21 +36,35 @@ def _solve(p: Problem):
     return plan, tot, solver
 
 
+def _ranges(hours: list[int]) -> str:
+    """[1, 10, 11, 12, 17, 18] -> "1, 10-12, 17-18"."""
+    out, start = [], None
+    for i, h in enumerate(hours):
+        if start is None:
+            start = h
+        if i + 1 == len(hours) or hours[i + 1] != h + 1:
+            out.append(f"{start}" if start == h else f"{start}-{h}")
+            start = None
+    return ", ".join(out)
+
+
 def summarize(directives: list[Directive], plan: list[dict], cost: float) -> str:
     applied = [d.directive_type for d in directives if d.applies]
     ignored = sum(1 for d in directives if not d.applies)
-    charged = sum(r["battery_kwh"] for r in plan if r["battery_action"] == "charge")
-    discharged = sum(r["battery_kwh"] for r in plan if r["battery_action"] == "discharge")
-    dis_hours = [r["hour"] for r in plan if r["battery_action"] == "discharge"]
+    chg = [r for r in plan if r["battery_action"] == "charge"]
+    dis = [r for r in plan if r["battery_action"] == "discharge"]
     parts = []
     if applied:
         parts.append("Applied " + ", ".join(applied))
     if ignored:
         parts.append(f"ignored {ignored} unrelated note(s)")
     head = "; ".join(parts) + ". " if parts else ""
-    strategy = (f"Charges {charged:g} kWh in cheaper hours and discharges {discharged:g} kWh"
-                + (f" mainly around hours {dis_hours[0]}-{dis_hours[-1]}" if dis_hours else "")
-                + " to cut grid cost, returning the battery to its initial level")
+    if not chg and not dis:
+        strategy = "Battery stays idle; demand is met from solar first, then the grid"
+    else:
+        strategy = (f"Charges {sum(r['battery_kwh'] for r in chg):g} kWh in hours {_ranges([r['hour'] for r in chg])} "
+                    f"and discharges {sum(r['battery_kwh'] for r in dis):g} kWh in hours {_ranges([r['hour'] for r in dis])}, "
+                    "shifting energy to higher-tariff hours and ending at the initial battery level")
     return f"{head}{strategy}; total grid cost {cost:g} BDT."
 
 
