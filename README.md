@@ -14,7 +14,7 @@ minimum-cost valid plan.
 | LLM | Groq `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b` (round-robin) → Groq fallback key → Google `gemini-3.5-flash-lite` → rule parser |
 | Optimizer | Linear program, HiGHS solver via `scipy.optimize.linprog` (exact DP fallback) |
 | Live URL | `<PUBLIC_BASE_URL>` |
-| Docker image | `smsohel/gridwise-llm:v1.0.1` (digest `sha256:dfc3177a9ac1fc85e84006c56ef32af93a710ce3d04bb38a7069c723b2c727b3`) |
+| Docker image | `smsohel/gridwise-llm:v1.0.2` (digest `sha256:f1bf5c636fd92f7c4d3cbd6631cb55d4c9635f61608c44c4df717ee473f8aaa3`) |
 
 ---
 
@@ -138,11 +138,11 @@ Covers the optimizer (all 10 reference costs), guardrails, interpretation chain 
 ## 3. Docker (fallback execution path)
 
 ```bash
-docker pull smsohel/gridwise-llm:v1.0.1
-docker run --rm -p 8000:8000 -e LLM_PROVIDER=groq -e LLM_API_KEY=<your-key> -e LLM_MODEL=openai/gpt-oss-120b@low,qwen/qwen3.8-27b@none,openai/gpt-oss-20b@low smsohel/gridwise-llm:v1.0.1
+docker pull smsohel/gridwise-llm:v1.0.2
+docker run --rm -p 8000:8000 -e LLM_PROVIDER=groq -e LLM_API_KEY=<your-key> -e LLM_MODEL=openai/gpt-oss-120b@low,qwen/qwen3.8-27b@none,openai/gpt-oss-20b@low smsohel/gridwise-llm:v1.0.2
 curl http://127.0.0.1:8000/health
 ```
-Or with an env file: `docker run --rm -p 8000:8000 --env-file .env smsohel/gridwise-llm:v1.0.1`.
+Or with an env file: `docker run --rm -p 8000:8000 --env-file .env smsohel/gridwise-llm:v1.0.2`.
 
 Build locally: `docker build -t gridwise-llm .` — the image contains no secrets, runs as a non-root user,
 exposes port 8000 and binds `0.0.0.0` (`PORT` overridable).
