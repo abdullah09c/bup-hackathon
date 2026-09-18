@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+tests
+scripts
+BUP_CSE_FEST_2026_Participant_Docs
+.antigravity
+.github
+*.md
