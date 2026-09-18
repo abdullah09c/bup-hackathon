@@ -179,3 +179,24 @@ def test_extract_json_tolerates_fences():
     assert client.extract_json('Sure! {"a": 2} hope that helps') == {"a": 2}
     with pytest.raises(client.LLMError):
         client.extract_json("no json here")
+
+
+def test_fallback_tiers_in_order(monkeypatch):
+    """Every primary model rate-limited -> fallback tier; fallback down too -> fallback2."""
+    p1 = LLMEndpoint(name="primary:a", base_url="http://p.invalid", api_key="k", model="a")
+    p2 = LLMEndpoint(name="primary:b", base_url="http://p.invalid", api_key="k", model="b")
+    f1 = LLMEndpoint(name="fallback:c", base_url="http://f.invalid", api_key="k2", model="c")
+    f2 = LLMEndpoint(name="fallback2:d", base_url="http://g.invalid", api_key="k3", model="d")
+    tried = []
+
+    async def fake(ep, messages, timeout):
+        tried.append(ep.name)
+        if ep is f2:
+            return GOOD, "{}"
+        raise client.LLMError("LLM HTTP 429", status=429)
+    monkeypatch.setattr(client, "chat_json", fake)
+    interpreter._COOLDOWN.clear()
+    ds, src = _run(NOTES, Settings([p1, p2, f1, f2], 5, 20, n_primary=2))
+    assert src == "fallback2:d"
+    assert set(tried[:2]) == {"primary:a", "primary:b"} and tried[2:] == ["fallback:c", "fallback2:d"]
+    interpreter._COOLDOWN.clear()

@@ -102,8 +102,12 @@ def load_dotenv(path: str = ".env") -> None:
 def load_settings() -> Settings:
     load_dotenv()
     primary = _endpoints("LLM_", "primary")
+    # fallback tiers, tried in order: LLM_FALLBACK_*, then LLM_FALLBACK2_*, LLM_FALLBACK3_*
+    fallbacks = _endpoints("LLM_FALLBACK_", "fallback")
+    for n in (2, 3):
+        fallbacks += _endpoints(f"LLM_FALLBACK{n}_", f"fallback{n}")
     return Settings(
-        endpoints=primary + _endpoints("LLM_FALLBACK_", "fallback"),
+        endpoints=primary + fallbacks,
         n_primary=len(primary),
         timeout_s=float(os.environ.get("LLM_TIMEOUT_SECONDS", "10")),
         request_budget_s=float(os.environ.get("LLM_REQUEST_BUDGET_SECONDS", "20")),

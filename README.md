@@ -11,7 +11,7 @@ minimum-cost valid plan.
 |---|---|
 | Endpoints | `GET /health`, `POST /optimize-energy` |
 | Port | `8000` (override with `PORT`), binds `0.0.0.0` |
-| LLM | Groq (OpenAI-compatible): `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b` in round-robin; any OpenAI-compatible provider works |
+| LLM | Groq `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b` (round-robin) → Groq fallback key → Google `gemini-3.5-flash-lite` → rule parser |
 | Optimizer | Linear program, HiGHS solver via `scipy.optimize.linprog` (exact DP fallback) |
 | Live URL | `<PUBLIC_BASE_URL>` |
 | Docker image | `smsohel/gridwise-llm:v1.0.1` (digest `sha256:dfc3177a9ac1fc85e84006c56ef32af93a710ce3d04bb38a7069c723b2c727b3`) |
@@ -25,7 +25,7 @@ request ──► schema validation (400 on bad structure)
         ──► LLM interpreter ──► guardrails ──► optimizer (HiGHS LP) ──► replay validator ──► response
                  │   ▲              │
                  │   └─ retry once with validation errors as feedback
-                 ├─► fallback LLM endpoint (if configured)
+                 ├─► fallback tiers in order (LLM_FALLBACK_*, LLM_FALLBACK2_*, …)
                  └─► rule-based parser → no_op   (last resort only; never invents a directive)
 ```
 
@@ -159,7 +159,8 @@ exposes port 8000 and binds `0.0.0.0` (`PORT` overridable).
 | `LLM_BASE_URL` | no | OpenAI-compatible base URL (required for providers without a preset) |
 | `LLM_REASONING_EFFORT` | no | Sent as `reasoning_effort` (e.g. `none`/`low`) to cut latency on reasoning models |
 | `LLM_JSON_MODE` | no | `false` disables `response_format: json_object` for endpoints that reject it |
-| `LLM_FALLBACK_PROVIDER` / `_API_KEY` / `_MODEL` / `_BASE_URL` | no | Second OpenAI-compatible endpoint, tried when the primary fails |
+| `LLM_FALLBACK_PROVIDER` / `_API_KEY` / `_MODEL` / `_BASE_URL` | no | First fallback tier (any OpenAI-compatible provider), tried when every primary model fails |
+| `LLM_FALLBACK2_*`, `LLM_FALLBACK3_*` | no | Further fallback tiers, same variables, tried in order |
 | `LLM_FALLBACK_HEADERS` | no | Extra HTTP headers for the fallback, JSON object |
 | `LLM_TIMEOUT_SECONDS` | no | Per LLM call (default 10) |
 | `LLM_REQUEST_BUDGET_SECONDS` | no | Total LLM time per request (default 20; the judge limit is 30) |
@@ -216,5 +217,5 @@ tests/                 pytest suite
 ## 8. Dependencies & credits
 
 FastAPI, Uvicorn, Pydantic v2, httpx, NumPy, SciPy (HiGHS solver) — see `requirements.txt`; pytest for tests.
-LLM provider: Groq API (OpenAI-compatible) — models `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b`.
+LLM providers: Groq API — `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b`; Google Gemini API (OpenAI-compatible endpoint) — `gemini-3.5-flash-lite` as fallback.
 AI coding assistants were used during development, as permitted by the rulebook.
