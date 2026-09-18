@@ -99,21 +99,22 @@ The image binds `0.0.0.0`, reads `PORT` if a host sets it, and has a Docker `HEA
 request -> validate input -> LLM reads notes -> guardrails -> optimizer -> replay check -> response
 ```
 
-- **LLM.** All notes go to the model in one call. It returns the directive type, the start and end hour and the number as written ("80%", "half", "90 kWh"). It never does arithmetic. The prompt is in `app/llm/prompt.py`.
-- **Guardrails.** Code turns that into the exact directive: hours with the end excluded, "80% reduction" into factor 0.2, percent of capacity into kWh. It rejects unknown types and out-of-range values. If the model's answer fails, it gets the errors back once, then the next model or fallback is tried. A small rule-based parser is the last resort only if every LLM is down.
-- **Optimizer.** A linear program minimizes grid cost under every battery, solar, grid and directive limit, and returns the battery to its starting level at the end of the day.
-- **Replay check.** Before sending, the plan is replayed hour by hour against all the rules, the same way the judge does.
+We send all the notes to the model in one call. For each note it returns the directive type, the start and end hour, and the number exactly as written ("80%", "half", "90 kWh"). We don't let it do any arithmetic; the prompt is in `app/llm/prompt.py`.
+
+Our guardrail code then builds the exact directive. It works out the hours (end hour excluded), turns "80% reduction" into factor 0.2 and converts a percent of capacity into kWh. It also rejects unknown types and out-of-range values. When the model's answer fails a check, we send the errors back once and then move on to the next model or fallback provider. A small rule-based parser only steps in if every LLM is down.
+
+Next, a linear program finds the cheapest grid usage that respects every battery, solar, grid and directive limit, and brings the battery back to its starting level by the end of the day. Before the response goes out, we replay the plan hour by hour against all the rules, the way the judge will.
 
 <details>
 <summary>Guardrails in detail</summary>
 
-- `directive_type` must be one of the six supported types. Anything else is rejected, not mapped to something close.
-- Each note gets exactly one interpretation, in `note_index` order. Unknown or duplicate indices are dropped, and a missing note is asked for again.
+- `directive_type` must be one of the six supported types. We reject anything else rather than mapping it to something close.
+- Each note gets exactly one interpretation, in `note_index` order. We drop unknown or duplicate indices and ask the model again for any note it skipped.
 - Hours come from the window: start included, end excluded, wrapping past midnight when needed. They end up unique, ascending and within 0 to 23.
 - Solar factor must be in [0, 1]. A reserve must be at least 0 and no more than battery capacity. A grid cap must be at least 0.
 - `no_op` always gets `applies=false` and a `null` adjustment. Every other type gets `applies=true` and the exact shape from the spec.
-- A solar reduction that only covers hours with zero solar is almost always an AM/PM slip ("one until three" read as 1 to 3 AM). If the same window 12 hours later has solar, the hours are moved there.
-- If validation fails, the errors go back to the model once. Then the next model is tried, then the fallback providers, then the rule parser, and finally `no_op`. The service never invents a directive and doesn't crash on bad model output.
+- A solar reduction that only covers hours with zero solar is almost always an AM/PM slip ("one until three" read as 1 to 3 AM). If the same window 12 hours later has solar, we move the hours there.
+- If validation fails, we give the errors back to the model once. After that we try the next model, then the fallback providers, then the rule parser, and finally `no_op`. Bad model output can't make the service invent a directive or crash.
 
 </details>
 
@@ -122,9 +123,9 @@ request -> validate input -> LLM reads notes -> guardrails -> optimizer -> repla
 
 Each hour has five variables: grid, solar used, charge, discharge and battery energy. The constraints are energy balance, battery transitions, `max(base minimum, reserve) <= energy <= capacity`, charge and discharge limits (0 inside no-charge or no-discharge windows), solar used at most forecast × factor, grid at most the cap, and hour 23 ending at the starting battery level.
 
-It minimizes grid × tariff. A tiny penalty on battery throughput stops needless cycling without changing the cost. Charge and discharge are netted into one action per hour, values are rounded to 4 decimals, and totals are recomputed from the rounded plan. On the public pack it matches all 10 reference optimal costs exactly. If SciPy is unavailable, an exact dynamic-programming solver takes over.
+The objective is grid × tariff. A tiny penalty on battery throughput keeps the solver from cycling the battery for nothing, and it doesn't change the cost. We net charge and discharge into one action per hour, round to 4 decimals and recompute the totals from the rounded plan. On the public pack it matches all 10 reference optimal costs exactly. If SciPy isn't available, an exact dynamic-programming solver takes over.
 
-Groq's free tier limits tokens per minute for each model separately, so the three primary models are rotated. A model that returns 429 sits out until its `retry-after` time passes, and notes already seen are answered from an in-memory cache.
+Groq's free tier limits tokens per minute for each model separately, so we rotate through the three primary models. A model that returns 429 sits out until its `retry-after` time passes, and we answer repeated notes from an in-memory cache.
 
 </details>
 
@@ -164,7 +165,7 @@ The deployed service uses a second Groq key as `LLM_FALLBACK_*` and Gemini as `L
 
 Keys are never logged or returned in responses, and errors never include stack traces.
 
-**API responses:** `200` success, `400` malformed or incomplete request, `422` valid JSON that can't be scheduled, `500` internal error with no details.
+The API answers `200` on success, `400` for a malformed or incomplete request, `422` for valid JSON that can't be scheduled and `500` for an internal error (with no details).
 
 ## Tests
 
@@ -198,7 +199,7 @@ tests/                 pytest suite
 
 - The Groq free tier handles about 15 to 20 new requests per minute. Beyond that, requests go to the fallback providers.
 - Interpretation quality depends on the LLM. The rule-based parser only knows common phrasings.
-- If a note leaves out AM or PM, it is inferred from context (solar work is daytime, evening peaks are PM).
+- If a note leaves out AM or PM, we infer it from context (solar work is daytime, evening peaks are PM).
 - A scenario that can't be scheduled returns 422 instead of a partial plan.
 
 ## Dependencies
